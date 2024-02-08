@@ -1,0 +1,15 @@
+# OS / editor cruft
+Thumbs.db
+.DS_Store
+*.swp
+*~
+
+# Node
+node_modules/
+
+# Local temp files & encode outputs
+*.tmp
+/tmp/
+*.log
+*-compressed.mp4
+out.mp4
