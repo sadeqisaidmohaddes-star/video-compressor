@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Smart Video Compressor — Fast (native FFmpeg)</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel-2:#1c232d; --line:#2a323d;
+    --text:#e6edf3; --muted:#9aa7b4; --accent:#4f8cff; --accent-2:#22c55e;
+    --danger:#ef4444; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(1200px 600px at 50% -10%,#1b2330,var(--bg));
+    color:var(--text); font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;
+    display:flex; align-items:flex-start; justify-content:center; padding:32px 16px;
+  }
+  .app{width:100%; max-width:640px}
+  header{text-align:center; margin-bottom:24px}
+  header h1{margin:0 0 6px; font-size:26px; letter-spacing:-.02em}
+  header p{margin:0; color:var(--muted); font-size:14px}
+  .badge{display:inline-block; margin-top:10px; padding:4px 10px; font-size:12px;
+    color:var(--accent-2); background:rgba(34,197,94,.12);
+    border:1px solid rgba(34,197,94,.3); border-radius:999px}
+  .card{background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--radius); padding:20px; margin-bottom:16px}
+  .drop{border:2px dashed var(--line); border-radius:var(--radius);
+    padding:34px 20px; text-align:center; cursor:pointer; transition:.15s; background:var(--panel-2)}
+  .drop:hover,.drop.over{border-color:var(--accent); background:#1a2330}
+  .drop .big{font-size:16px; font-weight:600}
+  .drop .sub{color:var(--muted); font-size:13px; margin-top:4px}
+  .drop input{display:none}
+  .fileline{margin-top:14px; font-size:13px; color:var(--muted); word-break:break-all}
+  .fileline b{color:var(--text)}
+  .controls{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:18px}
+  .field.full{grid-column:1 / -1}
+  .field label{display:block; font-size:12px; text-transform:uppercase;
+    letter-spacing:.04em; color:var(--muted); margin-bottom:6px}
+  select{width:100%; padding:10px 12px; background:var(--panel-2); color:var(--text);
+    border:1px solid var(--line); border-radius:10px; font-size:14px; cursor:pointer}
+  select:focus{outline:none; border-color:var(--accent)}
+  button.go{width:100%; margin-top:18px; padding:13px; font-size:15px; font-weight:600;
+    color:#fff; background:var(--accent); border:0; border-radius:10px; cursor:pointer; transition:.15s}
+  button.go:hover:not(:disabled){background:#3f7bef}
+  button.go:disabled{opacity:.5; cursor:not-allowed}
+  .progress-wrap{margin-top:18px; display:none}
+  .progress-wrap.show{display:block}
+  .bar{height:10px; background:var(--panel-2); border-radius:999px; overflow:hidden; border:1px solid var(--line)}
+  .bar > div{height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--accent-2)); transition:width .25s}
+  .bar.indet > div{width:35% !important; animation:slide 1.1s infinite ease-in-out}
+  @keyframes slide{0%{margin-left:-35%}100%{margin-left:100%}}
+  .status{margin-top:8px; font-size:13px; color:var(--muted); min-height:18px}
+  .result{display:none; margin-top:18px}
+  .result.show{display:block}
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; text-align:center}
+  .stat{background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:12px 8px}
+  .stat .n{font-size:18px; font-weight:700}
+  .stat .l{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-top:2px}
+  .saved .n{color:var(--accent-2)}
+  .frameLine{margin-top:10px; text-align:center; font-size:13px; color:var(--muted)}
+  .download{display:block; text-align:center; margin-top:14px; padding:12px;
+    background:var(--accent-2); color:#062613; font-weight:700; border-radius:10px; text-decoration:none}
+  video{width:100%; margin-top:14px; border-radius:10px; background:#000; display:none}
+  video.show{display:block}
+  .err{color:var(--danger); font-size:13px; margin-top:10px; display:none}
+  .err.show{display:block}
+  footer{text-align:center; color:#5a6573; font-size:12px; margin-top:8px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>⚡ Smart Video Compressor</h1>
+    <p>Deletes duplicate &amp; unnecessary frames, then re-encodes — using your machine's native FFmpeg.</p>
+    <span class="badge" id="engineBadge">● Connecting to local engine…</span>
+  </header>
+
+  <div class="card">
+    <label class="drop" id="drop">
+      <div class="big">Drop a video here, or click to choose</div>
+      <div class="sub">MP4, MOV, MKV, WebM, AVI… — large files OK, runs at native speed</div>
+      <input type="file" id="file" accept="video/*" />
+    </label>
+    <div class="fileline" id="fileline">No file selected.</div>
+
+    <div class="controls">
+      <div class="field">
+        <label for="level">Quality / size</label>
+        <select id="level">
+          <option value="quality">Quality — near-lossless</option>
+          <option value="high" selected>High — balanced (recommended)</option>
+          <option value="small">Small — noticeably smaller</option>
+          <option value="tiny">Tiny — smallest</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="dedupe">Frame cleanup</label>
+        <select id="dedupe">
+          <option value="off">Off — keep all frames</option>
+          <option value="gentle">Gentle — exact duplicates</option>
+          <option value="normal" selected>Normal — duplicates + redundant</option>
+          <option value="aggressive">Aggressive — screen recordings</option>
+        </select>
+      </div>
+      <div class="field full">
+        <label for="encoder">Speed vs size</label>
+        <select id="encoder"><option>Detecting…</option></select>
+      </div>
+    </div>
+
+    <button class="go" id="go" disabled>Compress video</button>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="bar" id="bar"><div id="barFill"></div></div>
+      <div class="status" id="status"></div>
+    </div>
+
+    <div class="err" id="err"></div>
+
+    <div class="result" id="result">
+      <div class="stats">
+        <div class="stat"><div class="n" id="sBefore">–</div><div class="l">Before</div></div>
+        <div class="stat saved"><div class="n" id="sSaved">–</div><div class="l">Saved</div></div>
+        <div class="stat"><div class="n" id="sAfter">–</div><div class="l">After</div></div>
+      </div>
+      <div class="frameLine" id="frameLine"></div>
+      <a class="download" id="download" download>⬇ Download compressed video</a>
+      <video id="preview" controls></video>
+    </div>
+  </div>
+
+  <footer>Runs locally on 127.0.0.1 — your video never leaves this computer.</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = b => b >= 1e9 ? (b/1e9).toFixed(2)+' GB'
+               : b >= 1e6 ? (b/1e6).toFixed(2)+' MB'
+               : b >= 1e3 ? (b/1e3).toFixed(1)+' KB' : (b||0)+' B';
+const secs = s => { s=Math.round(s); const m=Math.floor(s/60); return m? `${m}m ${s%60}s` : `${s}s`; };
+
+let chosenFile = null;
+
+// ---- capabilities ----
+(async () => {
+  try {
+    const caps = await (await fetch('/capabilities')).json();
+    const sel = $('encoder'); sel.innerHTML = '';
+    for (const m of caps.menu) {
+      const o = document.createElement('option');
+      o.value = m.id; o.textContent = m.label + (m.id === caps.recommended ? '  ✓' : '');
+      sel.appendChild(o);
+    }
+    sel.value = caps.recommended;
+    const gpu = caps.recommended === 'gpu';
+    $('engineBadge').textContent = gpu
+      ? '● Native FFmpeg + GPU acceleration — very fast'
+      : '● Native FFmpeg (CPU, multi-core) — fast';
+  } catch (e) {
+    $('engineBadge').textContent = '⚠ Could not reach the local engine';
+    showErr('The local compression server is not responding. Make sure it is running (Launch fast compressor.bat).');
+  }
+})();
+
+function showErr(msg){ const e=$('err'); e.textContent='⚠ '+msg; e.classList.add('show'); }
+
+// ---- file selection ----
+const drop = $('drop'), fileInput = $('file');
+['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', ev => { if (ev.dataTransfer.files[0]) selectFile(ev.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) selectFile(fileInput.files[0]); });
+function selectFile(f){
+  chosenFile = f;
+  $('fileline').innerHTML = `Selected: <b>${f.name}</b> — ${fmt(f.size)}`;
+  $('result').classList.remove('show'); $('err').classList.remove('show');
+  $('go').disabled = false;
+}
+
+// ---- compress ----
+$('go').addEventListener('click', async () => {
+  if (!chosenFile) return;
+  $('go').disabled = true;
+  $('err').classList.remove('show'); $('result').classList.remove('show');
+  $('progressWrap').classList.add('show');
+  $('bar').classList.remove('indet');
+  $('barFill').style.width = '0%';
+  $('status').textContent = 'Uploading…';
+
+  const qs = new URLSearchParams({
+    name: chosenFile.name, level: $('level').value,
+    dedupe: $('dedupe').value, encoder: $('encoder').value,
+  });
+
+  let job;
+  try {
+    const r = await fetch('/jobs?' + qs.toString(), { method: 'POST', body: chosenFile });
+    job = await r.json();
+    if (!job.id) throw new Error(job.error || 'upload failed');
+  } catch (e) { showErr('Upload failed: ' + e.message); $('go').disabled = false; return; }
+
+  const started = Date.now();
+  if (!job.duration) $('bar').classList.add('indet');
+
+  const es = new EventSource(`/jobs/${job.id}/events`);
+  es.onmessage = async (m) => {
+    const ev = JSON.parse(m.data);
+    if (ev.type === 'progress') {
+      if (ev.percent != null) {
+        $('bar').classList.remove('indet');
+        $('barFill').style.width = ev.percent.toFixed(1) + '%';
+      }
+      const elapsed = (Date.now() - started) / 1000;
+      const speed = ev.seconds && elapsed ? (ev.seconds / elapsed) : 0;
+      const eta = (ev.percent && ev.percent > 1) ? elapsed * (100 - ev.percent) / ev.percent : 0;
+      const bits = [];
+      if (ev.percent != null) bits.push(`${ev.percent.toFixed(0)}%`);
+      if (speed) bits.push(`${speed.toFixed(1)}× realtime`);
+      if (eta) bits.push(`~${secs(eta)} left`);
+      $('status').textContent = 'Compressing… ' + bits.join('  ·  ');
+    } else if (ev.type === 'done') {
+      es.close();
+      $('bar').classList.remove('indet');
+      $('barFill').style.width = '100%';
+      $('status').textContent = `Done in ${secs((Date.now()-started)/1000)}.`;
+      $('sBefore').textContent = fmt(ev.before);
+      $('sAfter').textContent  = fmt(ev.after);
+      $('sSaved').textContent  = (ev.saved >= 0 ? '' : '+') + Math.abs(ev.saved).toFixed(1) + '%';
+      if (ev.dedupe !== 'off' && ev.srcFrames > 0 && ev.outFrames > 0) {
+        const dropped = Math.max(0, ev.srcFrames - ev.outFrames);
+        $('frameLine').textContent =
+          `Frames: ${ev.srcFrames.toLocaleString()} → ${ev.outFrames.toLocaleString()} ` +
+          `(${dropped.toLocaleString()} dropped, ${(100*dropped/ev.srcFrames).toFixed(1)}%)  ·  encoder: ${ev.encoder}`;
+      } else if (ev.dedupe !== 'off' && ev.outFrames > 0) {
+        $('frameLine').textContent = `Kept ${ev.outFrames.toLocaleString()} frames  ·  encoder: ${ev.encoder}`;
+      } else {
+        $('frameLine').textContent = `encoder: ${ev.encoder}`;
+      }
+      // fetch result once → serves both inline preview and download
+      try {
+        const blob = await (await fetch(ev.downloadUrl)).blob();
+        const url = URL.createObjectURL(blob);
+        const dl = $('download');
+        dl.href = url; dl.download = chosenFile.name.replace(/\.[^.]+$/, '') + '.compressed.mp4';
+        const v = $('preview'); v.src = url; v.classList.add('show');
+      } catch (e) { showErr('Could not retrieve the output file: ' + e.message); }
+      $('result').classList.add('show');
+      $('go').disabled = false;
+    } else if (ev.type === 'error') {
+      es.close();
+      showErr('Compression failed: ' + ev.message);
+      $('status').textContent = 'Failed.'; $('bar').classList.remove('indet');
+      $('go').disabled = false;
+    }
+  };
+  es.onerror = () => { es.close(); if (!$('result').classList.contains('show')) { showErr('Lost connection to the engine.'); $('go').disabled = false; } };
+});
+</script>
+</body>
+</html>
