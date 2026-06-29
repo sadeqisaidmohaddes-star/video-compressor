@@ -3,6 +3,7 @@ Thumbs.db
 .DS_Store
 *.swp
 *~
+.claude/
 
 # Node
 node_modules/

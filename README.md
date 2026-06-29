@@ -1,5 +1,9 @@
 # Smart Video Compressor
 
+> **Project history:** The original concept and working project date to 2022.
+> This repository was reconstructed and republished in 2026 after the original
+> GitHub repository was lost.
+
 A small, powerful video compressor for Windows built on **FFmpeg**. It does two
 things to shrink a video as much as possible while keeping it looking good:
 
