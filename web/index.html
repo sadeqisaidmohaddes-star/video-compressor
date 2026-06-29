@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Smart Video Compressor — runs in your browser</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel-2:#1c232d; --line:#2a323d;
+    --text:#e6edf3; --muted:#9aa7b4; --accent:#4f8cff; --accent-2:#22c55e;
+    --danger:#ef4444; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(1200px 600px at 50% -10%,#1b2330,var(--bg));
+    color:var(--text); font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;
+    display:flex; align-items:flex-start; justify-content:center; padding:32px 16px;
+  }
+  .app{width:100%; max-width:640px}
+  header{text-align:center; margin-bottom:24px}
+  header h1{margin:0 0 6px; font-size:26px; letter-spacing:-.02em}
+  header p{margin:0; color:var(--muted); font-size:14px}
+  .badge{display:inline-block; margin-top:10px; padding:4px 10px; font-size:12px;
+    color:var(--accent-2); background:rgba(34,197,94,.12);
+    border:1px solid rgba(34,197,94,.3); border-radius:999px}
+
+  .card{background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--radius); padding:20px; margin-bottom:16px}
+
+  /* Drop zone */
+  .drop{border:2px dashed var(--line); border-radius:var(--radius);
+    padding:34px 20px; text-align:center; cursor:pointer; transition:.15s;
+    background:var(--panel-2)}
+  .drop:hover,.drop.over{border-color:var(--accent); background:#1a2330}
+  .drop .big{font-size:16px; font-weight:600}
+  .drop .sub{color:var(--muted); font-size:13px; margin-top:4px}
+  .drop input{display:none}
+  .fileline{margin-top:14px; font-size:13px; color:var(--muted); word-break:break-all}
+  .fileline b{color:var(--text)}
+
+  /* Controls */
+  .controls{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:18px}
+  .field label{display:block; font-size:12px; text-transform:uppercase;
+    letter-spacing:.04em; color:var(--muted); margin-bottom:6px}
+  select{width:100%; padding:10px 12px; background:var(--panel-2); color:var(--text);
+    border:1px solid var(--line); border-radius:10px; font-size:14px; cursor:pointer}
+  select:focus{outline:none; border-color:var(--accent)}
+
+  button.go{width:100%; margin-top:18px; padding:13px; font-size:15px; font-weight:600;
+    color:#fff; background:var(--accent); border:0; border-radius:10px; cursor:pointer;
+    transition:.15s}
+  button.go:hover:not(:disabled){background:#3f7bef}
+  button.go:disabled{opacity:.5; cursor:not-allowed}
+
+  /* Progress */
+  .progress-wrap{margin-top:18px; display:none}
+  .progress-wrap.show{display:block}
+  .bar{height:10px; background:var(--panel-2); border-radius:999px; overflow:hidden;
+    border:1px solid var(--line)}
+  .bar > div{height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--accent-2));
+    transition:width .2s}
+  .status{margin-top:8px; font-size:13px; color:var(--muted); min-height:18px}
+  .log{margin-top:8px; font:11px/1.4 ui-monospace,Consolas,monospace; color:#6b7785;
+    max-height:84px; overflow:auto; white-space:pre-wrap}
+
+  /* Result */
+  .result{display:none; margin-top:18px}
+  .result.show{display:block}
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; text-align:center}
+  .stat{background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:12px 8px}
+  .stat .n{font-size:18px; font-weight:700}
+  .stat .l{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-top:2px}
+  .saved .n{color:var(--accent-2)}
+  .download{display:block; text-align:center; margin-top:14px; padding:12px;
+    background:var(--accent-2); color:#062613; font-weight:700; border-radius:10px;
+    text-decoration:none}
+  video{width:100%; margin-top:14px; border-radius:10px; background:#000; display:none}
+  video.show{display:block}
+  .err{color:var(--danger); font-size:13px; margin-top:10px; display:none}
+  .err.show{display:block}
+  footer{text-align:center; color:#5a6573; font-size:12px; margin-top:8px}
+  code{background:var(--panel-2); padding:1px 5px; border-radius:5px; font-size:12px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>🎬 Smart Video Compressor</h1>
+    <p>Deletes duplicate &amp; unnecessary frames, then re-encodes to shrink your video.</p>
+    <span class="badge">● Runs 100% in your browser — nothing is uploaded</span>
+  </header>
+
+  <div class="card">
+    <label class="drop" id="drop">
+      <div class="big">Drop a video here, or click to choose</div>
+      <div class="sub">MP4, MOV, MKV, WebM, AVI… (best with clips up to ~150 MB)</div>
+      <input type="file" id="file" accept="video/*" />
+    </label>
+    <div class="fileline" id="fileline">No file selected.</div>
+
+    <div class="controls">
+      <div class="field">
+        <label for="level">Quality / size</label>
+        <select id="level">
+          <option value="22">Quality — near-lossless, larger</option>
+          <option value="26" selected>High — balanced (recommended)</option>
+          <option value="30">Small — noticeably smaller</option>
+          <option value="34">Tiny — smallest, for sharing</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="dedupe">Frame cleanup</label>
+        <select id="dedupe">
+          <option value="off">Off — keep all frames</option>
+          <option value="gentle">Gentle — exact duplicates only</option>
+          <option value="normal" selected>Normal — duplicates + redundant</option>
+          <option value="aggressive">Aggressive — best for screen recordings</option>
+        </select>
+      </div>
+    </div>
+
+    <button class="go" id="go" disabled>Compress video</button>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="bar"><div id="barFill"></div></div>
+      <div class="status" id="status">Loading engine…</div>
+      <div class="log" id="log"></div>
+    </div>
+
+    <div class="err" id="err"></div>
+
+    <div class="result" id="result">
+      <div class="stats">
+        <div class="stat"><div class="n" id="sBefore">–</div><div class="l">Before</div></div>
+        <div class="stat saved"><div class="n" id="sSaved">–</div><div class="l">Saved</div></div>
+        <div class="stat"><div class="n" id="sAfter">–</div><div class="l">After</div></div>
+      </div>
+      <div class="status" id="frameLine" style="text-align:center"></div>
+      <a class="download" id="download" download>⬇ Download compressed video</a>
+      <video id="preview" controls></video>
+    </div>
+  </div>
+
+  <footer>
+    Powered by FFmpeg (WebAssembly), bundled locally — works offline.
+  </footer>
+</div>
+
+<!-- ffmpeg.wasm 0.11 — engine bundled locally (vendor/) so it works offline and
+     under cross-origin isolation (COOP/COEP), which SharedArrayBuffer requires. -->
+<script src="vendor/ffmpeg.min.js"></script>
+<script>
+const { createFFmpeg, fetchFile } = FFmpeg;
+const ffmpeg = createFFmpeg({
+  log: false,
+  // Must be ABSOLUTE: ffmpeg.wasm 0.11 resolves a relative corePath against an
+  // internal file:/// base, which breaks fetch. The .wasm/.worker siblings are
+  // auto-derived from this path.
+  corePath: new URL('vendor/ffmpeg-core.js', location.href).href,
+});
+// In 0.11 the logger isn't read from options — it must be set explicitly.
+ffmpeg.setLogger(({ message }) => onLog(message));
+ffmpeg.setProgress(({ ratio }) => {
+  if (ratio >= 0 && ratio <= 1) setBar(ratio * 100, `Compressing… ${Math.round(ratio * 100)}%`);
+});
+
+// mpdecimate strength presets (hi:lo:frac)
+const DEDUPE = {
+  gentle:     'mpdecimate=hi=512:lo=320:frac=0.33',
+  normal:     'mpdecimate=hi=768:lo=320:frac=0.33',
+  aggressive: 'mpdecimate=hi=1280:lo=512:frac=0.2',
+};
+
+let chosenFile = null;
+let lastFrame = 0;          // parsed from ffmpeg log = output frame count
+let engineReady = false;
+
+const $ = id => document.getElementById(id);
+const fmt = b => b >= 1e9 ? (b/1e9).toFixed(2)+' GB'
+               : b >= 1e6 ? (b/1e6).toFixed(2)+' MB'
+               : b >= 1e3 ? (b/1e3).toFixed(1)+' KB' : b+' B';
+
+function setBar(pct, msg){ $('barFill').style.width = pct+'%'; if(msg) $('status').textContent = msg; }
+function onLog(line){
+  const m = /frame=\s*(\d+)/.exec(line);
+  if (m) lastFrame = parseInt(m[1], 10);
+  const el = $('log'); el.textContent = line; el.scrollTop = el.scrollHeight;
+}
+function showErr(msg){ const e=$('err'); e.textContent='⚠ '+msg; e.classList.add('show'); }
+
+// ---- file selection ----
+const drop = $('drop'), fileInput = $('file');
+['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', ev => { if (ev.dataTransfer.files[0]) selectFile(ev.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) selectFile(fileInput.files[0]); });
+
+function selectFile(f){
+  chosenFile = f;
+  $('fileline').innerHTML = `Selected: <b>${f.name}</b> — ${fmt(f.size)}`;
+  $('result').classList.remove('show');
+  $('err').classList.remove('show');
+  $('go').disabled = !engineReady;
+}
+
+// ---- load engine up front ----
+$('progressWrap').classList.add('show');
+(async () => {
+  try {
+    setBar(0, 'Loading compression engine…');
+    await ffmpeg.load();
+    engineReady = true;
+    setBar(0, 'Engine ready. Choose a video and click Compress.');
+    if (chosenFile) $('go').disabled = false;
+  } catch (e) {
+    showErr('Could not load the FFmpeg engine. Check your internet connection and reload. ' + e.message);
+    setBar(0, 'Engine failed to load.');
+  }
+})();
+
+// ---- compress ----
+$('go').addEventListener('click', async () => {
+  if (!chosenFile || !engineReady) return;
+  $('go').disabled = true;
+  $('err').classList.remove('show');
+  $('result').classList.remove('show');
+  lastFrame = 0;
+
+  const ext = (chosenFile.name.split('.').pop() || 'mp4').toLowerCase();
+  const inName = 'input.' + ext;
+  const outName = 'output.mp4';
+  const crf = $('level').value;
+  const dedupeKey = $('dedupe').value;
+
+  // Build video filter chain
+  const filters = [];
+  if (dedupeKey !== 'off') filters.push(DEDUPE[dedupeKey]);
+  filters.push('format=yuv420p');
+  const vf = filters.join(',');
+
+  try {
+    setBar(2, 'Reading file…');
+    ffmpeg.FS('writeFile', inName, await fetchFile(chosenFile));
+
+    setBar(4, 'Compressing… (this can take a while in the browser)');
+    await ffmpeg.run(
+      '-i', inName,
+      '-vf', vf,
+      '-vsync', 'vfr',          // actually drop the decimated frames, keep timestamps
+      '-c:v', 'libx264',
+      '-crf', crf,
+      '-preset', 'veryfast',    // wasm is CPU-bound; keep it usable
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-movflags', '+faststart',
+      outName
+    );
+
+    const data = ffmpeg.FS('readFile', outName);
+    const blob = new Blob([data.buffer], { type: 'video/mp4' });
+    const url = URL.createObjectURL(blob);
+
+    // stats
+    const before = chosenFile.size, after = blob.size;
+    const pct = before > 0 ? (100 * (before - after) / before) : 0;
+    $('sBefore').textContent = fmt(before);
+    $('sAfter').textContent  = fmt(after);
+    $('sSaved').textContent  = (pct >= 0 ? '' : '+') + Math.abs(pct).toFixed(1) + '%';
+    $('frameLine').textContent = (dedupeKey !== 'off' && lastFrame > 0)
+      ? `Kept ${lastFrame.toLocaleString()} frames after removing duplicates.` : '';
+
+    const dl = $('download');
+    dl.href = url;
+    dl.download = chosenFile.name.replace(/\.[^.]+$/, '') + '.compressed.mp4';
+    const v = $('preview'); v.src = url; v.classList.add('show');
+
+    setBar(100, 'Done!');
+    $('result').classList.add('show');
+
+    // clean up FS
+    try { ffmpeg.FS('unlink', inName); ffmpeg.FS('unlink', outName); } catch(_) {}
+  } catch (e) {
+    showErr('Compression failed: ' + e.message + '. Try a smaller clip or a lighter quality level.');
+    setBar(0, 'Failed.');
+  } finally {
+    $('go').disabled = false;
+  }
+});
+</script>
+</body>
+</html>
