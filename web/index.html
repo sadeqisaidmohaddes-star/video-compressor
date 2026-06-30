@@ -147,6 +147,10 @@
   </footer>
 </div>
 
+<!-- GitHub Pages cannot set COOP/COEP headers. This same-origin service worker
+     adds them so SharedArrayBuffer and the threaded FFmpeg core can run. -->
+<script src="coi-serviceworker.min.js"></script>
+
 <!-- ffmpeg.wasm 0.11 — engine bundled locally (vendor/) so it works offline and
      under cross-origin isolation (COOP/COEP), which SharedArrayBuffer requires. -->
 <script src="vendor/ffmpeg.min.js"></script>
